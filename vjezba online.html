@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Jednostavna platform igra s pokretnom lopticom</title>
+  <style>
+    html,body{height:100%;margin:0;background:#87ceeb;font-family:Arial,Helvetica,sans-serif}
+    #game{display:block;margin:20px auto;background:#7ec850;box-shadow:0 6px 18px rgba(0,0,0,0.25)}
+    .ui{width:800px;margin:0 auto;text-align:left;color:#fff}
+    .hud{display:flex;justify-content:space-between;padding:6px 10px;background:rgba(0,0,0,0.35);border-radius:6px}
+    .hint{font-size:13px;opacity:0.9}
+    .controls{font-size:13px}
+    .credit{font-size:12px;color:#222;margin-top:6px}
+  </style>
+</head>
+<body>
+  <div class="ui">
+    <div class="hud">
+      <div>Rezultat: <span id="score">0</span></div>
+      <div class="hint">Sakupljaj lopticu da dobiješ bod — pozicije se resetuju</div>
+      <div class="controls">Kontrole: strelice ← → ili A/D = pomak, Space = skok</div>
+    </div>
+    <canvas id="game" width="800" height="450"></canvas>
+    <div class="credit">Napomena: primjer igre s gravitacijom i pokretnom lopticom.</div>
+  </div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+let score = 0;
+const gravity = 0.8;
+
+// Igrač
+const player = {
+  x: 60,
+  y: H - 120,
+  w: 34,
+  h: 48,
+  vx: 0,
+  vy: 0,
+  speed: 10.0,
+  jumpPower: 14,
+  onGround: false,
+  color: '#283593'
+};
+const playerStart = {x: player.x, y: player.y};
+
+// Platforme
+const platforms = [
+  {x:0, y:H-20, w:W, h:20}, // tlo
+  {x:120, y:H-120, w:140, h:16},
+  {x:320, y:H-200, w:120, h:16},
+  {x:520, y:H-140, w:160, h:16},
+  {x:220, y:H-300, w:90, h:16}
+];
+
+// Loptica s gravitacijom
+let ball = {
+  x: 0,
+  y: 0,
+  r: 12,
+  collected: false,
+  color: 'blue',
+  vx: 0,
+  vy: 0
+};
+
+// Kontrole
+const keys = {left:false,right:false,jump:false};
+window.addEventListener('keydown', e => {
+  if(['ArrowLeft','a','A'].includes(e.key)) keys.left = true;
+  if(['ArrowRight','d','D'].includes(e.key)) keys.right = true;
+  if(e.code === 'Space') keys.jump = true;
+});
+window.addEventListener('keyup', e => {
+  if(['ArrowLeft','a','A'].includes(e.key)) keys.left = false;
+  if(['ArrowRight','d','D'].includes(e.key)) keys.right = false;
+  if(e.code === 'Space') keys.jump = false;
+});
+
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+
+// Postavljanje lopte (uvijek desno)
+function placeBallRandom(){
+  const choice = Math.random();
+  if(choice < 0.8){
+    const picks = platforms.filter(p => p.h < 30 && p.y < H-40);
+    const p = picks[Math.floor(Math.random()*picks.length)];
+    ball.x = clamp(p.x + 20 + Math.random()*(p.w-40), 20, W-20);
+    ball.y = p.y - ball.r - 2;
+  } else {
+    ball.x = 50 + Math.random()*(W-100);
+    ball.y = H - 40 - ball.r;
+  }
+  if(ball.x < W/2){
+    ball.x = W/2 + 40 + Math.random() * (W/2 - 60);
+  }
+
+  // Nasumična brzina i reset gravitacije
+  ball.vx = (Math.random() * 3 + 1) * (Math.random() < 0.5 ? -1 : 1);
+  ball.vy = 0;
+  ball.collected = false;
+}
+
+function resetPositions(){
+  player.x = playerStart.x;
+  player.y = playerStart.y;
+  player.vx = 0; player.vy = 0; player.onGround = false;
+  placeBallRandom();
+}
+
+function rectVsRect(a,b){
+  return !(a.x + a.w < b.x || a.x > b.x + b.w || a.y + a.h < b.y || a.y > b.y + b.h);
+}
+
+function update(){
+  // Pokret igrača
+  if(keys.left) player.vx = -player.speed;
+  else if(keys.right) player.vx = player.speed;
+  else player.vx = 0;
+
+  if(keys.jump && player.onGround){
+    player.vy = -player.jumpPower;
+    player.onGround = false;
+  }
+
+  player.vy += gravity;
+  player.x += player.vx;
+  player.y += player.vy;
+
+  // Rubovi
+  if(player.x < 0) player.x = 0; 
+  if(player.x + player.w > W) player.x = W - player.w;
+
+  // Sudar s platformama
+  player.onGround = false;
+  for(let p of platforms){
+    const platRect = {x:p.x, y:p.y, w:p.w, h:p.h};
+    const playerRect = {x:player.x, y:player.y, w:player.w, h:player.h};
+    if(rectVsRect(playerRect, platRect)){
+      if(player.vy >= 0 && player.y + player.h - player.vy <= p.y + 5){
+        player.y = p.y - player.h;
+        player.vy = 0;
+        player.onGround = true;
+      }
+    }
+  }
+
+  // Ako padne
+  if(player.y > H + 200){
+    resetPositions();
+  }
+
+  // 🟢 Kretanje lopte s gravitacijom
+  if(!ball.collected){
+    ball.vy += gravity * 0.5;
+    ball.x += ball.vx;
+    ball.y += ball.vy;
+
+    // Odbijanje od rubova
+    if(ball.x - ball.r < 0){
+      ball.x = ball.r;
+      ball.vx *= -0.9;
+    } else if(ball.x + ball.r > W){
+      ball.x = W - ball.r;
+      ball.vx *= -0.9;
+    }
+
+    // Odbijanje od tla
+    if(ball.y + ball.r > H - 20){
+      ball.y = H - 20 - ball.r;
+      ball.vy *= -0.7;
+      ball.vx *= 0.98;
+    }
+
+    // Odbijanje od platformi
+    for(let p of platforms){
+      if(ball.y + ball.r > p.y && ball.y < p.y && ball.x > p.x && ball.x < p.x + p.w){
+        ball.y = p.y - ball.r;
+        ball.vy *= -0.7;
+      }
+    }
+  }
+
+  // Sakupljanje lopte
+  const dx = (player.x + player.w/2) - ball.x;
+  const dy = (player.y + player.h/2) - ball.y;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  if(dist < ball.r + Math.max(player.w, player.h)/3 && !ball.collected){
+    ball.collected = true;
+    score++;
+    document.getElementById('score').textContent = score;
+    setTimeout(()=>{ resetPositions(); }, 250);
+  }
+}
+
+function draw(){
+  ctx.clearRect(0,0,W,H);
+
+  // Platforme
+  for(let p of platforms){
+    ctx.fillStyle = '#6d4c41';
+    ctx.fillRect(p.x, p.y, p.w, p.h);
+  }
+
+  // Lopta
+  if(!ball.collected){
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+    ctx.fillStyle = ball.color;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.stroke();
+  }
+
+  // Igrač
+  ctx.fillStyle = player.color;
+  ctx.fillRect(player.x, player.y, player.w, player.h);
+  ctx.fillStyle = '#ffeb3b';
+  ctx.fillRect(player.x + 6, player.y - 10, player.w - 12, 12);
+  ctx.fillStyle = '#000';
+  ctx.fillRect(player.x + 12, player.y - 8, 4, 4);
+  ctx.fillRect(player.x + 20, player.y - 8, 4, 4);
+}
+
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// Start
+resetPositions();
+loop();
+</script>
+</body>
+</html>
